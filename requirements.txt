@@ -1,0 +1,4 @@
+Flask==2.2.5
+pymavlink==2.4.40
+geopy==2.4.1
+Flask-SocketIO==5.3.6

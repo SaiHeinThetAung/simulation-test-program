@@ -1,0 +1,37 @@
+# Drone Simulator
+
+Simulates 20 drones sending MAVLink telemetry to a Java backend on a remote PC and displays positions on a web UI.
+
+## Setup
+1. Install Python 3.8+.
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Update `HOST` in `app.py` to the IP address of the Java backend PC (e.g., `192.168.1.123`).
+5. Ensure the Java backend is running on the remote PC, listening on UDP ports 15001–15020.
+6. Open firewall ports 15001–15020/UDP on the backend PC:
+   - Linux: `sudo ufw allow 15001:15020/udp`
+   - Windows: Add inbound rule for UDP 15001–15020.
+7. Run the Flask app:
+   ```bash
+   python app.py
+   ```
+8. Open `http://localhost:5000` in a browser to view the UI.
+
+## Dependencies
+- Flask==2.2.5
+- pymavlink==2.4.40
+- geopy==2.4.1
+
+## Notes
+- Sends MAVLink messages to `<HOST>:15001–15020` via UDP.
+- Ensure both PCs are on the same network and UDP ports are open.
+- The UI uses Leaflet via CDN for map rendering.
+- Debug connection issues with `ping <HOST>` or Wireshark.
+ -p drone_simulator/templates

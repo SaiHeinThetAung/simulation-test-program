@@ -1,0 +1,98 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Dependency directories
+pip/
+pip-selfcheck.json
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# PyInstaller
+*.spec
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# IDE and editor files
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# Logs and databases
+*.log
+*.sql
+*.sqlite
+
+# MAVLink generated files (if any)
+mavlink/
+
+# Flask-specific
+instance/
+*.db
+*.sqlite3
+
+# Local configuration files
+config.py
+settings.py
+.env
+
+# Ignore uploaded files or temporary data
+uploads/
+temp/
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db
+
+# Ignore Python artifacts
+*.egg
+*.egg-info
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+*.egg-info/
+
+# Ignore Pycharm specific files (if using PyCharm)
+.idea/
+
+# Ignore any binary or temporary files
+*.bak
+*.swp
+*~
+
+# Ignore node_modules if you add JavaScript (optional)
+node_modules/
+
+# Ignore Docker files (if used)
+Dockerfile
+docker-compose.yml
+*.dockerignore
