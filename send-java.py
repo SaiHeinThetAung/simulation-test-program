@@ -20,9 +20,9 @@ app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Configuration
-NUM_DRONES = 10  # Match Java backend (15001–15010)
-BASE_PORT = 15001
-HOST = '192.168.0.182'  # Target PC IP address
+NUM_DRONES = 100 # Match Java backend (15001–15010)
+BASE_PORT = 1000
+HOST = '192.168.0.197'  # Target PC IP address
 UPDATE_INTERVAL = 1.0
 TRAVEL_TIME = 1000
 TRAVEL_DISTANCE = 5000
@@ -169,7 +169,7 @@ class DroneSimulator:
                 0,  # onboard_control_sensors_enabled
                 0,  # onboard_control_sensors_health
                 0,  # load (not used in simulation)
-                int(self.battery_voltage * 1000),  # voltage_battery (mV)
+                int(self.battery_voltage * 1000),  # voltage_battery (mV)0
                 int(self.battery_current * 100),    # current_battery (cA)
                 -1,  # battery_remaining (-1 = unknown)
                 0,   # drop_rate_comm (not used)

@@ -1,76 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Drone Flight Simulator - 20 Drones</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
-    <style>
-        body { margin: 0; }
-        #map { height: 100vh; width: 100%; }
-        .drone-marker { font-size: 12px; }
-    </style>
+  <meta charset="utf-8" />
+  <title>Drone Simulator Control</title>
+  <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 16px; background:#f6f8fa; color:#111; }
+    .card { background:white; border-radius:8px; padding:16px; box-shadow:0 2px 6px rgba(0,0,0,0.08); margin-bottom:12px; }
+    label { display:block; margin-top:8px; font-size:13px; }
+    input[type="text"], input[type="number"] { width:100%; padding:8px; margin-top:6px; border-radius:6px; border:1px solid #ddd; }
+    button { margin-top:12px; padding:10px 12px; border-radius:6px; border:none; cursor:pointer; }
+    .btn-start { background:#0b84ff; color:white; }
+    .btn-stop { background:#ff4d4f; color:white; margin-left:8px;}
+    #status { margin-top:8px; font-weight:600; }
+    table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13px; display:none; }
+    th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; }
+    th { background:#fafafa; font-weight:700; }
+    #telemetry-placeholder { color:#666; margin-top:8px; }
+  </style>
 </head>
 <body>
-    <div id="map"></div>
+  <div class="card">
+    <h2>Drone Simulator Control</h2>
+    <form id="configForm" onsubmit="return false;">
+      <label>Host IP (GCS target)</label>
+      <input id="host" type="text" placeholder="e.g. 192.168.0.197" value="192.168.0.197" required />
 
-    <script>
-        const map = L.map('map').setView([35.08, 129.08], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
+      <label>Start Port</label>
+      <input id="start_port" type="number" placeholder="e.g. 15000" value="15000" required />
 
-        const markers = {};
+      <label>Number of Drones</label>
+      <input id="num_drones" type="number" placeholder="e.g. 20" value="10" min="1" max="1000" required />
 
-        function updateUI(data) {
-            if (!data || Object.keys(data).length === 0) {
-                console.warn('No telemetry data received');
-                return;
-            }
+      <div style="margin-top:12px;">
+        <button id="startBtn" class="btn-start">Start Simulation</button>
+        <button id="stopBtn" class="btn-stop">Stop Simulation</button>
+      </div>
+      <div id="status">Simulation not started</div>
+    </form>
+  </div>
 
-            Object.entries(data).forEach(([port, tel]) => {
-                const lat = parseFloat(tel.lat);
-                const lon = parseFloat(tel.lon);
-                
-                if (isNaN(lat) || isNaN(lon) || lat === 0 || lon === 0) {
-                    console.warn(`Invalid coordinates for Drone ${port - 14999}: lat=${lat}, lon=${lon}`);
-                    return;
-                }
+  <div class="card">
+    <h3></h3>
+    <div id="telemetry-placeholder"></div>
+    <div style="overflow:auto; max-height:480px;">
+   
+    </div>
+  </div>
 
-                const status = tel.flight_status === 1 ? 'Flying' : 'Grounded';
-                const color = status === 'Flying' ? 'green' : 'red';
+<script>
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const statusEl = document.getElementById('status');
+  const telemetryPlaceholder = document.getElementById('telemetry-placeholder');
+  const telemetryTable = document.getElementById('telemetryTable');
+  const telemetryBody = document.getElementById('telemetryBody');
 
-                if (!markers[port]) {
-                    markers[port] = L.marker([lat, lon], {
-                        icon: L.divIcon({
-                            className: 'drone-marker',
-                            html: `<div style="background:${color};width:10px;height:10px;border-radius:50%;"></div>`
-                        })
-                    }).bindTooltip(`Drone ${port - 14999}`, { permanent: false }).addTo(map);
-                    console.log(`Created marker for Drone ${port - 14999} at [${lat}, ${lon}]`);
-                } else {
-                    markers[port].setLatLng([lat, lon]);
-                    markers[port].setIcon(L.divIcon({
-                        className: 'drone-marker',
-                        html: `<div style="background:${color};width:10px;height:10px;border-radius:50%;"></div>`
-                    }));
-                }
-            });
-        }
+  async function startSimulation() {
+    const host = document.getElementById('host').value;
+    const start_port = parseInt(document.getElementById('start_port').value, 10);
+    const num_drones = parseInt(document.getElementById('num_drones').value, 10);
 
-        const socket = io.connect('http://localhost:5000');
-        socket.on('connect', () => {
-            console.log('Connected to WebSocket');
-        });
-        socket.on('telemetry_update', (data) => {
-            console.log('Received telemetry update:', Object.keys(data).length, 'drones');
-            updateUI(data);
-        });
-        socket.on('disconnect', () => {
-            console.warn('Disconnected from WebSocket');
-        });
-    </script>
+    statusEl.textContent = 'Starting simulation...';
+    try {
+      const res = await fetch('/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ host, start_port, num_drones })
+      });
+      const j = await res.json();
+      if (j.status === 'started') {
+        statusEl.textContent = `Started ${j.num_drones} drones -> ${j.host}:${j.base_port}`;
+      } else {
+        statusEl.textContent = 'Start response: ' + JSON.stringify(j);
+      }
+    } catch (err) {
+      statusEl.textContent = 'Error starting simulation: ' + err;
+    }
+  }
+
+  async function stopSimulation() {
+    statusEl.textContent = 'Stop simulation...';
+    try {
+      const res = await fetch('/stop', { method: 'POST' });
+      const j = await res.json();
+      if (j.status === 'stopped') {
+        statusEl.textContent = 'Simulation stopped';
+        clearTelemetry();
+      } else {
+        statusEl.textContent = 'Stop response: ' + JSON.stringify(j);
+      }
+    } catch (err) {
+      statusEl.textContent = 'Error stopping simulation: ' + err;
+    }
+  }
+
+  function clearTelemetry() {
+    telemetryBody.innerHTML = '';
+    telemetryPlaceholder.style.display = 'block';
+    telemetryTable.style.display = 'none';
+  }
+
+  function renderTelemetry(data) {
+    const keys = Object.keys(data).sort((a,b)=>Number(a)-Number(b));
+    if (keys.length === 0) {
+      clearTelemetry();
+      return;
+    }
+    telemetryPlaceholder.style.display = 'none';
+    telemetryTable.style.display = 'table';
+
+    const rows = [];
+    for (const k of keys) {
+      const t = data[k];
+      const last = t.timestamp || '';
+      rows.push(`
+        <tr>
+          <td>${t.port}</td>
+          <td>${t.lat}</td>
+          <td>${t.lon}</td>
+          <td>${t.alt}</td>
+          <td>${t.ground_speed}</td>
+          <td>${t.wp_dist || '-'}</td>
+          <td>${t.dist_to_home || '-'}</td>
+          <td>${t.ch3percent || '-'}</td>
+          <td>${t.battery_voltage || '-'}</td>
+          <td style="white-space:nowrap">${last}</td>
+        </tr>
+      `);
+    }
+    telemetryBody.innerHTML = rows.join('');
+  }
+
+  startBtn.addEventListener('click', startSimulation);
+  stopBtn.addEventListener('click', stopSimulation);
+
+  // Socket.IO client
+  const socket = io();
+  socket.on('connect', () => {
+    console.log('Socket connected');
+  });
+
+  socket.on('telemetry_update', (data) => {
+    renderTelemetry(data);
+  });
+</script>
 </body>
 </html>
