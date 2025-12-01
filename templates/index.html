@@ -35,7 +35,7 @@
 
       <div style="margin-top:12px;">
         <button id="startBtn" class="btn-start">Start Simulation</button>
-        <button id="stopBtn" class="btn-stop">Stop Simulation</button>
+        <!-- <button id="stopBtn" class="btn-stop">Stop Simulation</button> -->
       </div>
       <div id="status">Simulation not started</div>
     </form>
@@ -134,7 +134,7 @@
   }
 
   startBtn.addEventListener('click', startSimulation);
-  stopBtn.addEventListener('click', stopSimulation);
+//   stopBtn.addEventListener('click', stopSimulation);
 
   // Socket.IO client
   const socket = io();
