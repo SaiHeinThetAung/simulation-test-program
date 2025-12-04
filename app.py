@@ -4,7 +4,7 @@ import random
 import math
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, emit
 from pymavlink import mavutil
 from geopy.distance import geodesic
 from geopy.point import Point
@@ -291,7 +291,7 @@ class DroneSimulator:
 
         # emit to connected clients (broadcast)
         try:
-            socketio.emit('telemetry_update', telemetry_data, broadcast=True)
+            socketio.emit('telemetry_update', telemetry_data)
         except Exception:
             # If socketio can't send, it's not fatal for simulation.
             pass
@@ -343,16 +343,21 @@ class DroneSimulator:
         try:
             if self.connection:
                 self.connection.close()
-        except Exception:
-            pass
+                logger.info(f"[Drone {self.drone_id}] connection closed")
+        except Exception as e:
+            logger.debug(f"[Drone {self.drone_id}] error closing connection: {e}")
 
 # ---- Simulator control helpers ----
 def start_simulators(host, base_port, num_drones):
-    global _sim_threads, _stop_events
+    global _sim_threads, _stop_events, telemetry_data
     stop_events = []
     threads = []
 
     logger.info(f"Spawning {num_drones} drone simulators -> {host}:{base_port}..{base_port+num_drones-1}")
+
+    # Clear any existing telemetry data
+    with lock:
+        telemetry_data.clear()
 
     for i in range(num_drones):
         port = base_port + i
@@ -372,30 +377,35 @@ def start_simulators(host, base_port, num_drones):
 def stop_simulators():
     global _sim_threads, _stop_events, telemetry_data
     logger.info("Stopping simulators...")
+    
+    # Check if there are simulators running
+    if not _sim_threads:
+        logger.info("No simulators are currently running")
+        return
+    
     # signal stop
     for ev in _stop_events:
         try:
             ev.set()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Error setting stop event: {e}")
 
-    # wait briefly for threads to exit
+    # wait for threads to exit
     for t in _sim_threads:
         try:
-            t.join(timeout=1.0)
-        except Exception:
-            pass
+            t.join(timeout=2.0)
+            if t.is_alive():
+                logger.warning(f"Thread {t.name} did not stop gracefully")
+        except Exception as e:
+            logger.debug(f"Error joining thread: {e}")
 
     # clear lists and telemetry
     _sim_threads = []
     _stop_events = []
     with lock:
         telemetry_data.clear()
-    # broadcast empty telemetry
-    try:
-        socketio.emit('telemetry_update', telemetry_data, broadcast=True)
-    except Exception:
-        pass
+    
+    logger.info("All simulators stopped")
 
 # ---- Flask routes ----
 @app.route('/')
@@ -425,6 +435,9 @@ def start_route():
 
     start_simulators(host, base_port, num_drones)
 
+    # Send initial empty telemetry to clear UI
+    socketio.emit('telemetry_update', {})
+
     return jsonify({
         "status": "started",
         "host": host,
@@ -434,21 +447,40 @@ def start_route():
 
 @app.route('/stop', methods=['POST'])
 def stop_route():
+    logger.info("Stop route called from UI")
     stop_simulators()
-    return jsonify({"status": "stopped"})
+    
+    # Clear telemetry data
+    with lock:
+        telemetry_data.clear()
+    
+    # Emit empty telemetry to all clients
+    socketio.emit('telemetry_update', {})
+    
+    return jsonify({"status": "stopped", "message": "All simulators stopped"})
 
 @app.route('/debug', methods=['GET'])
 def debug_route():
     with lock:
         return jsonify(dict(telemetry_data))
 
-# # ---- SocketIO connection handler ----
-# @socketio.on('connect')
-# def handle_connect():
-#     logger.info("Client connected to WebSocket")
-#     with lock:
-#         # send current telemetry snapshot on connect
-#         socketio.emit('telemetry_update', telemetry_data, broadcast=False)
+@app.route('/status', methods=['GET'])
+def status_route():
+    with lock:
+        num_drones = len(telemetry_data)
+    return jsonify({
+        "status": "running" if _sim_threads else "stopped",
+        "num_drones": num_drones,
+        "threads_alive": len([t for t in _sim_threads if t.is_alive()]) if _sim_threads else 0
+    })
+
+# ---- SocketIO connection handler ----
+@socketio.on('connect')
+def handle_connect():
+    logger.info("Client connected to WebSocket")
+    # Send current telemetry snapshot on connect
+    with lock:
+        socketio.emit('telemetry_update', telemetry_data)
 
 # ---- Run app ----
 if __name__ == '__main__':
