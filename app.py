@@ -47,6 +47,9 @@ class DroneSimulator:
         self.host = host
         self.update_interval = update_interval
 
+        # system_id = last two digits of port (01-99 → 1-99, 00 → 100)
+        self.system_id = self._get_system_id_from_port()
+
         self.connection = None
         self.source_lat = 35.0764119 + random.uniform(-0.01, 0.01)
         self.source_lon = 129.0907938 + random.uniform(-0.01, 0.01)
@@ -76,6 +79,14 @@ class DroneSimulator:
         self.dist_traveled = 0.0
         self.dist_to_home = 0.0
 
+    def _get_system_id_from_port(self):
+        """Extract last two digits of port and convert to system_id (1-100).
+        Examples: 1401 → 1, 1415 → 15, 1499 → 99, 1500 → 100"""
+        last_two = self.port % 100
+        if last_two == 0:
+            return 100  # Avoid sysid 0 (invalid in MAVLink), use 100 instead
+        return last_two
+
     def _generate_dummy_waypoints(self):
         waypoints = [
             {'seq': 0, 'lat': self.source_lat, 'lon': self.source_lon, 'alt': 30.0},
@@ -84,15 +95,15 @@ class DroneSimulator:
         return waypoints
 
     def connect_udp(self):
-        # Try a few times to establish udpout connection to the GCS host/port
         for attempt in range(3):
             try:
-                # Using udpout so we send packets outward to HOST:port
                 self.connection = mavutil.mavlink_connection(
                     f'udpout:{self.host}:{self.port}',
-                    source_system=1, source_component=1, dialect='common'
+                    source_system=self.system_id,      # Now 1–100 based on port
+                    source_component=1,
+                    dialect='common'
                 )
-                logger.info(f"[Drone {self.drone_id}] configured to send to {self.host}:{self.port}")
+                logger.info(f"[Drone {self.drone_id}] Port {self.port} → SysID {self.system_id} → sending to {self.host}:{self.port}")
                 return
             except Exception as e:
                 logger.warning(f"[Drone {self.drone_id}] connect attempt {attempt+1} failed: {e}")
@@ -104,7 +115,7 @@ class DroneSimulator:
         try:
             if self.connection:
                 self.connection.mav.heartbeat_send(
-                    mavutil.mavlink.MAV_TYPE_GCS,
+                    mavutil.mavlink.MAV_TYPE_QUADROTOR,  # Changed to more realistic type
                     mavutil.mavlink.MAV_AUTOPILOT_INVALID,
                     0, 0, 0
                 )
@@ -198,7 +209,6 @@ class DroneSimulator:
             self.connection = None
 
     def update_telemetry(self):
-        # update position along the route based on elapsed time
         current_time = time.time()
         elapsed_time = current_time - self.start_time
         fraction = (elapsed_time % TRAVEL_TIME) / TRAVEL_TIME
@@ -216,7 +226,6 @@ class DroneSimulator:
         self.current_lat = current.latitude
         self.current_lon = current.longitude
 
-        # altitude climb phase
         if self.current_alt < 50.0:
             self.vertical_speed = 1.0
             self.current_alt += self.vertical_speed * self.update_interval
@@ -246,7 +255,7 @@ class DroneSimulator:
         telemetry = {
             'port': self.port,
             'GCS_IP': self.host,
-            'system_id': 1,
+            'system_id': self.system_id,  # Now exactly matches last two digits (1–100)
             'flight_status': 1 if self.ch3out > 1050 else 0,
             'auto_time': 0,
             'throttle_active': self.ch3out > 1050,
@@ -289,17 +298,14 @@ class DroneSimulator:
         with lock:
             telemetry_data[self.port] = telemetry
 
-        # emit to connected clients (broadcast)
         try:
             socketio.emit('telemetry_update', telemetry_data)
         except Exception:
-            # If socketio can't send, it's not fatal for simulation.
             pass
 
         return telemetry
 
     def run(self, stop_event: threading.Event):
-        # initial connect attempt
         self.connect_udp()
         if self.connection:
             try:
@@ -312,11 +318,9 @@ class DroneSimulator:
             except Exception as e:
                 logger.debug(f"[Drone {self.drone_id}] initial send error: {e}")
 
-        # run main loop until stop_event set
         while not stop_event.is_set():
             self.update_telemetry()
 
-            # if connection lost, try to reconnect
             if self.connection is None:
                 self.connect_udp()
 
@@ -333,13 +337,11 @@ class DroneSimulator:
                     logger.debug(f"[Drone {self.drone_id}] send failed: {e}")
                     self.connection = None
 
-            # use small sleep increments so we can respond to stop_event quickly
             sleep_acc = 0.0
             while sleep_acc < self.update_interval and not stop_event.is_set():
                 time.sleep(0.1)
                 sleep_acc += 0.1
 
-        # cleanup on stop: close mavlink connection if exists
         try:
             if self.connection:
                 self.connection.close()
@@ -355,7 +357,6 @@ def start_simulators(host, base_port, num_drones):
 
     logger.info(f"Spawning {num_drones} drone simulators -> {host}:{base_port}..{base_port+num_drones-1}")
 
-    # Clear any existing telemetry data
     with lock:
         telemetry_data.clear()
 
@@ -367,7 +368,6 @@ def start_simulators(host, base_port, num_drones):
         t.start()
         threads.append(t)
         stop_events.append(stop_event)
-        # Slight stagger to avoid bursts
         time.sleep(0.05)
 
     _sim_threads = threads
@@ -378,28 +378,18 @@ def stop_simulators():
     global _sim_threads, _stop_events, telemetry_data
     logger.info("Stopping simulators...")
     
-    # Check if there are simulators running
     if not _sim_threads:
         logger.info("No simulators are currently running")
         return
     
-    # signal stop
     for ev in _stop_events:
-        try:
-            ev.set()
-        except Exception as e:
-            logger.debug(f"Error setting stop event: {e}")
+        ev.set()
 
-    # wait for threads to exit
     for t in _sim_threads:
-        try:
-            t.join(timeout=2.0)
-            if t.is_alive():
-                logger.warning(f"Thread {t.name} did not stop gracefully")
-        except Exception as e:
-            logger.debug(f"Error joining thread: {e}")
+        t.join(timeout=2.0)
+        if t.is_alive():
+            logger.warning(f"Thread {t.name} did not stop gracefully")
 
-    # clear lists and telemetry
     _sim_threads = []
     _stop_events = []
     with lock:
@@ -425,17 +415,14 @@ def start_route():
     except (TypeError, ValueError):
         return jsonify({"status": "error", "message": "start_port and num_drones must be integers"}), 400
 
-    # stop existing sims if any
     stop_simulators()
 
-    # update config and start new sims
     _sim_config['host'] = host
     _sim_config['base_port'] = base_port
     _sim_config['num_drones'] = num_drones
 
     start_simulators(host, base_port, num_drones)
 
-    # Send initial empty telemetry to clear UI
     socketio.emit('telemetry_update', {})
 
     return jsonify({
@@ -449,14 +436,9 @@ def start_route():
 def stop_route():
     logger.info("Stop route called from UI")
     stop_simulators()
-    
-    # Clear telemetry data
     with lock:
         telemetry_data.clear()
-    
-    # Emit empty telemetry to all clients
     socketio.emit('telemetry_update', {})
-    
     return jsonify({"status": "stopped", "message": "All simulators stopped"})
 
 @app.route('/debug', methods=['GET'])
@@ -474,16 +456,12 @@ def status_route():
         "threads_alive": len([t for t in _sim_threads if t.is_alive()]) if _sim_threads else 0
     })
 
-# ---- SocketIO connection handler ----
 @socketio.on('connect')
 def handle_connect():
     logger.info("Client connected to WebSocket")
-    # Send current telemetry snapshot on connect
     with lock:
         socketio.emit('telemetry_update', telemetry_data)
 
-# ---- Run app ----
 if __name__ == '__main__':
     logger.info("Starting Flask + Socket.IO server on http://0.0.0.0:5000")
-    # NOTE: you can install eventlet/gevent for better scaling; default is fine for dev
     socketio.run(app, host='0.0.0.0', port=5000, debug=False)
