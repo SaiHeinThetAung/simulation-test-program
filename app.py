@@ -24,7 +24,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 DEFAULT_HOST = '192.168.0.197'
 DEFAULT_BASE_PORT = 1000
 DEFAULT_NUM_DRONES = 10
-UPDATE_INTERVAL = 1.0
+UPDATE_INTERVAL = 0.5  # Modified to 0.5 seconds per the request for sending drone data
 TRAVEL_TIME = 1000
 TRAVEL_DISTANCE = 5000
 
