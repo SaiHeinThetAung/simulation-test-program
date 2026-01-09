@@ -10,35 +10,27 @@ from geopy.distance import geodesic
 from geopy.point import Point
 import logging
 import socket
-
 # ---- Logging ----
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 # ---- Flask/socketio ----
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
-
-# ---- Default simulation config (can be overridden by UI) ----
 DEFAULT_HOST = '192.168.0.197'
-DEFAULT_BASE_PORT = 1000
-DEFAULT_NUM_DRONES = 10
-UPDATE_INTERVAL = 0.5  # Modified to 0.5 seconds per the request for sending drone data
+DEFAULT_PORTS = []
+UPDATE_INTERVAL = 0.5 # Modified to 0.5 seconds per the request for sending drone data
 TRAVEL_TIME = 1000
 TRAVEL_DISTANCE = 5000
-
 # ---- Global state ----
 telemetry_data = {}
 lock = threading.Lock()
-_sim_threads = []        # list of threading.Thread objects
-_stop_events = []        # list of threading.Event objects
+_sim_threads = [] # list of threading.Thread objects
+_stop_events = [] # list of threading.Event objects
 _sim_config = {
     "host": DEFAULT_HOST,
-    "base_port": DEFAULT_BASE_PORT,
-    "num_drones": DEFAULT_NUM_DRONES
+    "ports": DEFAULT_PORTS
 }
-
 # ---- Drone simulator class ----
 class DroneSimulator:
     def __init__(self, drone_id, port, host, update_interval=UPDATE_INTERVAL):
@@ -46,10 +38,8 @@ class DroneSimulator:
         self.port = port
         self.host = host
         self.update_interval = update_interval
-
         # system_id = last two digits of port (01-99 → 1-99, 00 → 100)
         self.system_id = self._get_system_id_from_port()
-
         self.connection = None
         self.source_lat = 35.0764119 + random.uniform(-0.01, 0.01)
         self.source_lon = 129.0907938 + random.uniform(-0.01, 0.01)
@@ -61,7 +51,7 @@ class DroneSimulator:
         self.current_lat = self.source_lat
         self.current_lon = self.source_lon
         self.current_alt = 0.0
-        self.ground_speed = TRAVEL_DISTANCE / TRAVEL_TIME  # m/s
+        self.ground_speed = TRAVEL_DISTANCE / TRAVEL_TIME # m/s
         self.vertical_speed = 0.0
         self.roll = 0.0
         self.pitch = 0.0
@@ -78,28 +68,25 @@ class DroneSimulator:
         self.mission_count = len(self.waypoints)
         self.dist_traveled = 0.0
         self.dist_to_home = 0.0
-
     def _get_system_id_from_port(self):
         """Extract last two digits of port and convert to system_id (1-100).
         Examples: 1401 → 1, 1415 → 15, 1499 → 99, 1500 → 100"""
         last_two = self.port % 100
         if last_two == 0:
-            return 100  # Avoid sysid 0 (invalid in MAVLink), use 100 instead
+            return 100 # Avoid sysid 0 (invalid in MAVLink), use 100 instead
         return last_two
-
     def _generate_dummy_waypoints(self):
         waypoints = [
             {'seq': 0, 'lat': self.source_lat, 'lon': self.source_lon, 'alt': 30.0},
             {'seq': 1, 'lat': self.dest_lat, 'lon': self.dest_lon, 'alt': 50.0}
         ]
         return waypoints
-
     def connect_udp(self):
         for attempt in range(3):
             try:
                 self.connection = mavutil.mavlink_connection(
                     f'udpout:{self.host}:{self.port}',
-                    source_system=self.system_id,      # Now 1–100 based on port
+                    source_system=self.system_id, # Now 1–100 based on port
                     source_component=1,
                     dialect='common'
                 )
@@ -110,26 +97,23 @@ class DroneSimulator:
                 self.connection = None
                 time.sleep(1)
         logger.error(f"[Drone {self.drone_id}] failed to configure UDP after attempts")
-
     def send_heartbeat(self):
         try:
             if self.connection:
                 self.connection.mav.heartbeat_send(
-                    mavutil.mavlink.MAV_TYPE_QUADROTOR,  # Changed to more realistic type
+                    mavutil.mavlink.MAV_TYPE_QUADROTOR, # Changed to more realistic type
                     mavutil.mavlink.MAV_AUTOPILOT_INVALID,
                     0, 0, 0
                 )
         except Exception as e:
             logger.debug(f"[Drone {self.drone_id}] heartbeat error: {e}")
             self.connection = None
-
     def send_mission_count(self):
         try:
             if self.connection:
                 self.connection.mav.mission_count_send(1, 1, self.mission_count)
         except Exception:
             self.connection = None
-
     def send_mission_item_int(self, waypoint):
         try:
             if self.connection:
@@ -142,7 +126,6 @@ class DroneSimulator:
                 )
         except Exception:
             self.connection = None
-
     def send_global_position_int(self):
         try:
             if self.connection:
@@ -156,7 +139,6 @@ class DroneSimulator:
                 )
         except Exception:
             self.connection = None
-
     def send_nav_controller_output(self):
         try:
             if self.connection:
@@ -165,7 +147,6 @@ class DroneSimulator:
                 )
         except Exception:
             self.connection = None
-
     def send_vfr_hud(self):
         try:
             if self.connection:
@@ -176,7 +157,6 @@ class DroneSimulator:
                 )
         except Exception:
             self.connection = None
-
     def send_attitude(self):
         try:
             if self.connection:
@@ -186,7 +166,6 @@ class DroneSimulator:
                 )
         except Exception:
             self.connection = None
-
     def send_sys_status(self):
         try:
             if self.connection:
@@ -198,7 +177,6 @@ class DroneSimulator:
                 )
         except Exception:
             self.connection = None
-
     def send_servo_output_raw(self):
         try:
             if self.connection:
@@ -207,12 +185,10 @@ class DroneSimulator:
                 )
         except Exception:
             self.connection = None
-
     def update_telemetry(self):
         current_time = time.time()
         elapsed_time = current_time - self.start_time
         fraction = (elapsed_time % TRAVEL_TIME) / TRAVEL_TIME
-
         if fraction >= 1.0:
             self.start_time = current_time
             fraction = 0.0
@@ -220,12 +196,10 @@ class DroneSimulator:
             self.current_lon = self.source_lon
             self.dist_traveled = 0.0
             self.ch3out = 1000
-
         source = Point(latitude=self.source_lat, longitude=self.source_lon)
         current = geodesic(meters=TRAVEL_DISTANCE * fraction).destination(source, self.bearing)
         self.current_lat = current.latitude
         self.current_lon = current.longitude
-
         if self.current_alt < 50.0:
             self.vertical_speed = 1.0
             self.current_alt += self.vertical_speed * self.update_interval
@@ -233,16 +207,13 @@ class DroneSimulator:
                 self.current_alt = 50.0
         else:
             self.vertical_speed = 0.0
-
         if self.current_alt > 0.9:
             self.ch3out = random.randint(1500, 2000)
         else:
             self.ch3out = 1000
-
         self.dist_traveled = TRAVEL_DISTANCE * fraction
         self.dist_to_home = geodesic((self.current_lat, self.current_lon), (self.source_lat, self.source_lon)).meters
         self.wp_dist = TRAVEL_DISTANCE - self.dist_traveled
-
         self.roll = random.uniform(-10, 10)
         self.pitch = random.uniform(-5, 5)
         self.yaw = self.bearing
@@ -251,11 +222,10 @@ class DroneSimulator:
         ch3percent = ((self.ch3out - 1000) / 1000.0) * 100
         tot = self.wp_dist / max(self.ground_speed, 0.1) if self.ground_speed > 0 else 0
         toh = self.dist_to_home / max(self.ground_speed, 0.1) if self.ground_speed > 0 else 0
-
         telemetry = {
             'port': self.port,
             'GCS_IP': self.host,
-            'system_id': self.system_id,  # Now exactly matches last two digits (1–100)
+            'system_id': self.system_id, # Now exactly matches last two digits (1–100)
             'flight_status': 1 if self.ch3out > 1050 else 0,
             'auto_time': 0,
             'throttle_active': self.ch3out > 1050,
@@ -294,17 +264,13 @@ class DroneSimulator:
             'timestamp': datetime.now().isoformat(),
             'flight_count': 1
         }
-
         with lock:
             telemetry_data[self.port] = telemetry
-
         try:
             socketio.emit('telemetry_update', telemetry_data)
         except Exception:
             pass
-
         return telemetry
-
     def run(self, stop_event: threading.Event):
         self.connect_udp()
         if self.connection:
@@ -317,13 +283,10 @@ class DroneSimulator:
                     time.sleep(0.02)
             except Exception as e:
                 logger.debug(f"[Drone {self.drone_id}] initial send error: {e}")
-
         while not stop_event.is_set():
             self.update_telemetry()
-
             if self.connection is None:
                 self.connect_udp()
-
             if self.connection:
                 try:
                     self.send_heartbeat()
@@ -336,32 +299,26 @@ class DroneSimulator:
                 except Exception as e:
                     logger.debug(f"[Drone {self.drone_id}] send failed: {e}")
                     self.connection = None
-
             sleep_acc = 0.0
             while sleep_acc < self.update_interval and not stop_event.is_set():
                 time.sleep(0.1)
                 sleep_acc += 0.1
-
         try:
             if self.connection:
                 self.connection.close()
                 logger.info(f"[Drone {self.drone_id}] connection closed")
         except Exception as e:
             logger.debug(f"[Drone {self.drone_id}] error closing connection: {e}")
-
 # ---- Simulator control helpers ----
-def start_simulators(host, base_port, num_drones):
+def start_simulators(host, ports):
     global _sim_threads, _stop_events, telemetry_data
     stop_events = []
     threads = []
-
-    logger.info(f"Spawning {num_drones} drone simulators -> {host}:{base_port}..{base_port+num_drones-1}")
-
+    num_drones = len(ports)
+    logger.info(f"Spawning {num_drones} drone simulators -> {host}:{', '.join(map(str, sorted(ports)))}")
     with lock:
         telemetry_data.clear()
-
-    for i in range(num_drones):
-        port = base_port + i
+    for i, port in enumerate(sorted(ports)):
         drone = DroneSimulator(i + 1, port, host)
         stop_event = threading.Event()
         t = threading.Thread(target=drone.run, args=(stop_event,), daemon=True)
@@ -369,69 +326,56 @@ def start_simulators(host, base_port, num_drones):
         threads.append(t)
         stop_events.append(stop_event)
         time.sleep(0.05)
-
     _sim_threads = threads
     _stop_events = stop_events
     return threads, stop_events
-
 def stop_simulators():
     global _sim_threads, _stop_events, telemetry_data
     logger.info("Stopping simulators...")
-    
+   
     if not _sim_threads:
         logger.info("No simulators are currently running")
         return
-    
+   
     for ev in _stop_events:
         ev.set()
-
     for t in _sim_threads:
         t.join(timeout=2.0)
         if t.is_alive():
             logger.warning(f"Thread {t.name} did not stop gracefully")
-
     _sim_threads = []
     _stop_events = []
     with lock:
         telemetry_data.clear()
-    
+   
     logger.info("All simulators stopped")
-
 # ---- Flask routes ----
 @app.route('/')
 def index():
     return render_template('index.html')
-
 @app.route('/start', methods=['POST'])
 def start_route():
     data = request.get_json(force=True)
     if not data:
         return jsonify({"status": "error", "message": "No JSON body provided"}), 400
-
     host = data.get('host') or DEFAULT_HOST
-    try:
-        base_port = int(data.get('start_port', DEFAULT_BASE_PORT))
-        num_drones = int(data.get('num_drones', DEFAULT_NUM_DRONES))
-    except (TypeError, ValueError):
-        return jsonify({"status": "error", "message": "start_port and num_drones must be integers"}), 400
-
+    ports = data.get('ports')
+    if not isinstance(ports, list) or len(ports) == 0 or not all(isinstance(p, int) for p in ports):
+        return jsonify({"status": "error", "message": "ports must be a non-empty list of integers"}), 400
+    # Deduplicate ports if needed
+    ports = list(set(ports))
+    num_drones = len(ports)
     stop_simulators()
-
     _sim_config['host'] = host
-    _sim_config['base_port'] = base_port
-    _sim_config['num_drones'] = num_drones
-
-    start_simulators(host, base_port, num_drones)
-
+    _sim_config['ports'] = ports
+    start_simulators(host, ports)
     socketio.emit('telemetry_update', {})
-
     return jsonify({
         "status": "started",
         "host": host,
-        "base_port": base_port,
+        "ports": ports,
         "num_drones": num_drones
     })
-
 @app.route('/stop', methods=['POST'])
 def stop_route():
     logger.info("Stop route called from UI")
@@ -440,12 +384,10 @@ def stop_route():
         telemetry_data.clear()
     socketio.emit('telemetry_update', {})
     return jsonify({"status": "stopped", "message": "All simulators stopped"})
-
 @app.route('/debug', methods=['GET'])
 def debug_route():
     with lock:
         return jsonify(dict(telemetry_data))
-
 @app.route('/status', methods=['GET'])
 def status_route():
     with lock:
@@ -455,13 +397,11 @@ def status_route():
         "num_drones": num_drones,
         "threads_alive": len([t for t in _sim_threads if t.is_alive()]) if _sim_threads else 0
     })
-
 @socketio.on('connect')
 def handle_connect():
     logger.info("Client connected to WebSocket")
     with lock:
         socketio.emit('telemetry_update', telemetry_data)
-
 if __name__ == '__main__':
     logger.info("Starting Flask + Socket.IO server on http://0.0.0.0:5000")
     socketio.run(app, host='0.0.0.0', port=5000, debug=False)

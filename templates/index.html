@@ -22,6 +22,22 @@
     th, td { padding:8px; border-bottom:1px solid #eee; text-align:left; }
     th { background:#fafafa; font-weight:700; }
     #telemetry-placeholder { color:#666; margin-top:8px; }
+    #ports-container { display: flex; flex-wrap: wrap; max-height: 200px; overflow-y: auto; margin-top: 6px; }
+    #ports-container label { display: inline-flex; align-items: center; margin: 0 8px 8px 0; font-size: 13px; }
+    #ports-container input { margin-right: 4px; }
+    #ports-controls {
+      margin: 8px 0 12px 0;
+    }
+    #ports-controls button {
+      padding: 6px 12px;
+      margin-right: 8px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn-select { background: #0b84ff; color: white; }
+    .btn-deselect { background: #6c757d; color: white; }
   </style>
 </head>
 <body>
@@ -30,13 +46,12 @@
     <form id="configForm" onsubmit="return false;">
       <label>Host IP (GCS target)</label>
       <input id="host" type="text" placeholder="e.g. 192.168.0.164" value="192.168.0.164" required />
-
-      <label>Start Port</label>
-      <input id="start_port" type="number" placeholder="e.g. 15000" value="1000" required />
-
-      <label>Number of Drones</label>
-      <input id="num_drones" type="number" placeholder="e.g. 20" value="1" min="1" max="50" required />
-
+      <label>Select Ports (15001 - 15049)</label>
+      <div id="ports-controls">
+        <button id="selectAll" class="btn-select">Select All</button>
+        <button id="deselectAll" class="btn-deselect">Deselect All</button>
+      </div>
+      <div id="ports-container"></div>
       <div style="margin-top:12px;">
         <button id="startBtn" class="btn-start">Start Simulation</button>
         <button id="stopBtn" class="btn-stop">Stop Simulation</button>
@@ -44,7 +59,6 @@
       <div id="status">Simulation not started</div>
     </form>
   </div>
-
   <div class="card">
     <h3>Drone Telemetry</h3>
     <div id="telemetry-placeholder">No telemetry data available. Start simulation to see data.</div>
@@ -70,7 +84,6 @@
       </table>
     </div>
   </div>
-
 <script>
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
@@ -79,29 +92,60 @@
   const telemetryTable = document.getElementById('telemetryTable');
   const telemetryBody = document.getElementById('telemetryBody');
 
+  function populatePorts() {
+    const container = document.getElementById('ports-container');
+    container.innerHTML = ''; // clear in case of re-population
+    for (let p = 15001; p <= 15049; p++) {
+      const label = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = p;
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + p));
+      container.appendChild(label);
+    }
+  }
+
+  populatePorts();
+
+  // Select / Deselect All functionality
+  document.getElementById('selectAll').addEventListener('click', () => {
+    document.querySelectorAll('#ports-container input[type="checkbox"]')
+            .forEach(cb => cb.checked = true);
+  });
+
+  document.getElementById('deselectAll').addEventListener('click', () => {
+    document.querySelectorAll('#ports-container input[type="checkbox"]')
+            .forEach(cb => cb.checked = false);
+  });
+
   async function startSimulation() {
     const host = document.getElementById('host').value;
-    const start_port = parseInt(document.getElementById('start_port').value, 10);
-    const num_drones = parseInt(document.getElementById('num_drones').value, 10);
+    const ports = Array.from(document.querySelectorAll('#ports-container input:checked')).map(cb => parseInt(cb.value));
+    
+    if (ports.length === 0) {
+      statusEl.textContent = 'Error: Please select at least one port.';
+      return;
+    }
 
     statusEl.textContent = 'Starting simulation...';
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    
+   
     try {
       const res = await fetch('/start', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ host, start_port, num_drones })
+        body: JSON.stringify({ host, ports })
       });
-      
+     
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
-      
+     
       const j = await res.json();
       if (j.status === 'started') {
-        statusEl.textContent = `Started ${j.num_drones} drones -> ${j.host}:${j.base_port}`;
+        statusEl.textContent = `Started ${j.num_drones} drones -> ${j.host}`;
       } else {
         statusEl.textContent = 'Start response: ' + JSON.stringify(j);
       }
@@ -112,22 +156,21 @@
       startBtn.disabled = false;
     }
   }
-
   async function stopSimulation() {
     statusEl.textContent = 'Stopping simulation...';
     startBtn.disabled = true;
     stopBtn.disabled = true;
-    
+   
     try {
-      const res = await fetch('/stop', { 
+      const res = await fetch('/stop', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'}
       });
-      
+     
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
-      
+     
       const j = await res.json();
       if (j.status === 'stopped') {
         statusEl.textContent = 'Simulation stopped';
@@ -143,30 +186,27 @@
       stopBtn.disabled = true;
     }
   }
-
   function clearTelemetry() {
     telemetryBody.innerHTML = '';
     telemetryPlaceholder.style.display = 'block';
     telemetryPlaceholder.textContent = 'Websocket Client disconnected.';
     telemetryTable.style.display = 'none';
   }
-
   function renderTelemetry(data) {
     // Check if data is empty or not an object
     if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
       clearTelemetry();
       return;
     }
-    
+   
     const keys = Object.keys(data).sort((a,b)=>Number(a)-Number(b));
     if (keys.length === 0) {
       clearTelemetry();
       return;
     }
-    
+   
     telemetryPlaceholder.style.display = 'none';
     telemetryTable.style.display = 'table';
-
     const rows = [];
     for (const k of keys) {
       const t = data[k];
@@ -188,31 +228,24 @@
     }
     telemetryBody.innerHTML = rows.join('');
   }
-
   startBtn.addEventListener('click', startSimulation);
   stopBtn.addEventListener('click', stopSimulation);
-
   // Socket.IO client
   const socket = io();
   socket.on('connect', () => {
     console.log('Socket connected');
   });
-
   socket.on('telemetry_update', (data) => {
     renderTelemetry(data);
   });
-
   socket.on('disconnect', () => {
     console.log('Socket disconnected');
   });
-
   socket.on('connect_error', (error) => {
     console.error('Socket connection error:', error);
   });
-
   // Initialize button states
   stopBtn.disabled = true;
-
   // Check initial simulation status on page load
   async function checkInitialStatus() {
     try {
@@ -228,7 +261,6 @@
       console.log('Could not check initial status:', err);
     }
   }
-
   // Check status when page loads
   checkInitialStatus();
 </script>
