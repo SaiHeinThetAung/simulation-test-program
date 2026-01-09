@@ -22,6 +22,58 @@ DEFAULT_PORTS = []
 UPDATE_INTERVAL = 0.5 # Modified to 0.5 seconds per the request for sending drone data
 TRAVEL_TIME = 1000
 TRAVEL_DISTANCE = 5000
+# ---- Asian locations ----
+asian_locations = [
+    {"country": "Afghanistan", "capital": "Kabul", "lat": 34.51666667, "lon": 69.183333},
+    {"country": "Armenia", "capital": "Yerevan", "lat": 40.16666667, "lon": 44.5},
+    {"country": "Azerbaijan", "capital": "Baku", "lat": 40.38333333, "lon": 49.866667},
+    {"country": "Bahrain", "capital": "Manama", "lat": 26.23333333, "lon": 50.566667},
+    {"country": "Bangladesh", "capital": "Dhaka", "lat": 23.71666667, "lon": 90.4},
+    {"country": "Bhutan", "capital": "Thimphu", "lat": 27.46666667, "lon": 89.633333},
+    {"country": "Brunei Darussalam", "capital": "Bandar Seri Begawan", "lat": 4.883333333, "lon": 114.933333},
+    {"country": "Cambodia", "capital": "Phnom Penh", "lat": 11.55, "lon": 104.916667},
+    {"country": "China", "capital": "Beijing", "lat": 39.91666667, "lon": 116.383333},
+    {"country": "Georgia", "capital": "Tbilisi", "lat": 41.68333333, "lon": 44.833333},
+    {"country": "India", "capital": "New Delhi", "lat": 28.6, "lon": 77.2},
+    {"country": "Indonesia", "capital": "Jakarta", "lat": -6.166666667, "lon": 106.816667},
+    {"country": "Iran", "capital": "Tehran", "lat": 35.7, "lon": 51.416667},
+    {"country": "Iraq", "capital": "Baghdad", "lat": 33.33333333, "lon": 44.4},
+    {"country": "Israel", "capital": "Jerusalem", "lat": 31.76666667, "lon": 35.233333},
+    {"country": "Japan", "capital": "Tokyo", "lat": 35.68333333, "lon": 139.75},
+    {"country": "Jordan", "capital": "Amman", "lat": 31.95, "lon": 35.933333},
+    {"country": "Kazakhstan", "capital": "Astana", "lat": 51.16666667, "lon": 71.416667},
+    {"country": "Kuwait", "capital": "Kuwait City", "lat": 29.36666667, "lon": 47.966667},
+    {"country": "Kyrgyzstan", "capital": "Bishkek", "lat": 42.86666667, "lon": 74.6},
+    {"country": "Laos", "capital": "Vientiane", "lat": 17.96666667, "lon": 102.6},
+    {"country": "Lebanon", "capital": "Beirut", "lat": 33.86666667, "lon": 35.5},
+    {"country": "Malaysia", "capital": "Kuala Lumpur", "lat": 3.166666667, "lon": 101.7},
+    {"country": "Maldives", "capital": "Male", "lat": 4.166666667, "lon": 73.5},
+    {"country": "Mongolia", "capital": "Ulaanbaatar", "lat": 47.91666667, "lon": 106.916667},
+    {"country": "Myanmar", "capital": "Yangon", "lat": 16.8, "lon": 96.15},
+    {"country": "Nepal", "capital": "Kathmandu", "lat": 27.71666667, "lon": 85.316667},
+    {"country": "North Korea", "capital": "Pyongyang", "lat": 39.01666667, "lon": 125.75},
+    {"country": "Oman", "capital": "Muscat", "lat": 23.61666667, "lon": 58.583333},
+    {"country": "Pakistan", "capital": "Islamabad", "lat": 33.68333333, "lon": 73.05},
+    {"country": "Philippines", "capital": "Manila", "lat": 14.6, "lon": 120.966667},
+    {"country": "Qatar", "capital": "Doha", "lat": 25.28333333, "lon": 51.533333},
+    {"country": "Russia", "capital": "Moscow", "lat": 55.75, "lon": 37.6},
+    {"country": "Saudi Arabia", "capital": "Riyadh", "lat": 24.65, "lon": 46.7},
+    {"country": "Singapore", "capital": "Singapore", "lat": 1.283333333, "lon": 103.85},
+    {"country": "South Korea", "capital": "Seoul", "lat": 37.55, "lon": 126.983333},
+    {"country": "Sri Lanka", "capital": "Colombo", "lat": 6.916666667, "lon": 79.833333},
+    {"country": "Syria", "capital": "Damascus", "lat": 33.5, "lon": 36.3},
+    {"country": "Taiwan", "capital": "Taipei", "lat": 25.03333333, "lon": 121.516667},
+    {"country": "Tajikistan", "capital": "Dushanbe", "lat": 38.55, "lon": 68.766667},
+    {"country": "Thailand", "capital": "Bangkok", "lat": 13.75, "lon": 100.516667},
+    {"country": "Turkey", "capital": "Ankara", "lat": 39.93333333, "lon": 32.866667},
+    {"country": "Turkmenistan", "capital": "Ashgabat", "lat": 37.95, "lon": 58.383333},
+    {"country": "United Arab Emirates", "capital": "Abu Dhabi", "lat": 24.46666667, "lon": 54.366667},
+    {"country": "Uzbekistan", "capital": "Tashkent", "lat": 41.31666667, "lon": 69.25},
+    {"country": "Vietnam", "capital": "Hanoi", "lat": 21.03333333, "lon": 105.85},
+    {"country": "Yemen", "capital": "Sanaa", "lat": 15.35, "lon": 44.2},
+    {"country": "Palestine", "capital": "Jerusalem", "lat": 31.76666667, "lon": 35.233333},
+    {"country": "East Timor", "capital": "Dili", "lat": -8.583333333, "lon": 125.6}
+]
 # ---- Global state ----
 telemetry_data = {}
 lock = threading.Lock()
@@ -33,16 +85,17 @@ _sim_config = {
 }
 # ---- Drone simulator class ----
 class DroneSimulator:
-    def __init__(self, drone_id, port, host, update_interval=UPDATE_INTERVAL):
+    def __init__(self, drone_id, port, host, source_lat, source_lon, country, update_interval=UPDATE_INTERVAL):
         self.drone_id = drone_id
         self.port = port
         self.host = host
+        self.country = country
         self.update_interval = update_interval
         # system_id = last two digits of port (01-99 → 1-99, 00 → 100)
         self.system_id = self._get_system_id_from_port()
         self.connection = None
-        self.source_lat = 35.0764119 + random.uniform(-0.01, 0.01)
-        self.source_lon = 129.0907938 + random.uniform(-0.01, 0.01)
+        self.source_lat = source_lat + random.uniform(-0.01, 0.01)
+        self.source_lon = source_lon + random.uniform(-0.01, 0.01)
         self.bearing = random.uniform(0, 360)
         source = Point(latitude=self.source_lat, longitude=self.source_lon)
         destination = geodesic(meters=TRAVEL_DISTANCE).destination(source, self.bearing)
@@ -224,6 +277,7 @@ class DroneSimulator:
         toh = self.dist_to_home / max(self.ground_speed, 0.1) if self.ground_speed > 0 else 0
         telemetry = {
             'port': self.port,
+            'country': self.country,
             'GCS_IP': self.host,
             'system_id': self.system_id, # Now exactly matches last two digits (1–100)
             'flight_status': 1 if self.ch3out > 1050 else 0,
@@ -318,8 +372,12 @@ def start_simulators(host, ports):
     logger.info(f"Spawning {num_drones} drone simulators -> {host}:{', '.join(map(str, sorted(ports)))}")
     with lock:
         telemetry_data.clear()
-    for i, port in enumerate(sorted(ports)):
-        drone = DroneSimulator(i + 1, port, host)
+    sorted_ports = sorted(ports)
+    num_locations = len(asian_locations)
+    for i, port in enumerate(sorted_ports):
+        loc_index = (port - 15001) % num_locations  # Map port 15001 to 0, 15002 to 1, etc.
+        loc = asian_locations[loc_index]
+        drone = DroneSimulator(i + 1, port, host, source_lat=loc['lat'], source_lon=loc['lon'], country=loc['country'])
         stop_event = threading.Event()
         t = threading.Thread(target=drone.run, args=(stop_event,), daemon=True)
         t.start()

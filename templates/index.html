@@ -67,6 +67,7 @@
         <thead>
           <tr>
             <th>Port</th>
+            <th>Country</th>
             <th>Latitude</th>
             <th>Longitude</th>
             <th>Altitude</th>
@@ -214,6 +215,7 @@
       rows.push(`
         <tr>
           <td>${t.port || k}</td>
+          <td>${t.country || '-'}</td>
           <td>${t.lat || '-'}</td>
           <td>${t.lon || '-'}</td>
           <td>${t.alt || '-'}</td>
